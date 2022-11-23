@@ -1,6 +1,4 @@
-
 from .mqtt_client import MqttClient
-
 
 class MqttPublisher(MqttClient):
     def publish(self, message, topic):
@@ -10,6 +8,3 @@ class MqttPublisher(MqttClient):
             print(f"Send `{message}` to topic `{topic}`")
         else:
             print(f"Failed to send message to topic {topic}")
-
-    def loop(self):
-        self._client.loop_start()
