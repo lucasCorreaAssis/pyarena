@@ -1,0 +1,3 @@
+[submodule "Multicore"]
+	path = Multicore
+	url = https://github.com/AImotion-Autonomous-Vehicles/Multicore.git
