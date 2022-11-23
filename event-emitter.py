@@ -1,23 +1,28 @@
 
 from abc import ABC, abstractclassmethod
+import pandas as pd
 
-class HistoricEventEmitter(ABC):
+class EventEmitter(ABC):
     @abstractclassmethod
     def loadHistoricData():
         pass
 
     @abstractclassmethod
-    def emitNext():
+    def emitNext(timestamp):
         pass
 
-class GoodPartsEmitter(HistoricEventEmitter):
-    pass
+class MQTTEventEmitter(EventEmitter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.dataframe = pd.DataFrame()
+        self.current_index = 0
 
-class BadPartsEmitter(HistoricEventEmitter):
-    pass
+    def loadHistoricData(self, csv_path: str):
+        self.dataframe = pd.read_csv(csv_path)
 
-# How to load file, constructor? method?
+    def emitNext(self, timestamp):
+        self.dataframe.iloc[self.current_index]
+        
+        self.current_index += 1
 
-# Do we need an orchestrator to handle when to emit next?
-
-# Or should the emit next method receive a reference timestamp?
+        # add code of publisher!!!
