@@ -34,7 +34,7 @@ class OeeSubscriber:
         fault_config = MqttConfig('fault', self._config.broker, self._config.port)
         fault_subscriber = MqttSubscriber(fault_config)
         fault_subscriber.connect()
-        fault_subscriber.subscribe(self._on_message_parts)
+        fault_subscriber.subscribe(self._on_message_fault)
         fault_subscriber.start()
         return fault_subscriber
 
@@ -42,7 +42,7 @@ class OeeSubscriber:
         bad_config = MqttConfig('bad_parts', self._config.broker, self._config.port)
         bad_subscriber = MqttSubscriber(bad_config)
         bad_subscriber.connect()
-        bad_subscriber.subscribe(self._on_message_parts)
+        bad_subscriber.subscribe(self._on_message_bad)
         bad_subscriber.start()
         return bad_subscriber
 
@@ -50,7 +50,7 @@ class OeeSubscriber:
         good_config = MqttConfig('good_parts', self._config.broker, self._config.port)
         good_subscriber = MqttSubscriber(good_config)
         good_subscriber.connect()
-        good_subscriber.subscribe(self._on_message_parts)
+        good_subscriber.subscribe(self._on_message_good)
         good_subscriber.start()
         return good_subscriber
 
