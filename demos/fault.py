@@ -9,5 +9,5 @@ try:
     while True:
         pass
 except KeyboardInterrupt:
-    print('Stopping OEE!')
+    print('Stopping Fault!')
     fault.stop()
