@@ -1,5 +1,5 @@
 from typing import List
-from mqtt import MqttSubscriber, MqttConfig
+from mqtt import MqttSubscriber, MqttConfig, MqttPublisher
 from paho.mqtt.client import MQTTMessage
 import http.client
 import json
@@ -7,6 +7,7 @@ import random
 
 class OeeSubscriber:
     _config: MqttConfig
+    _publisher: MqttPublisher
     _threads: List[MqttSubscriber]
     _total_parts: int
     _total_stop_time: float
@@ -20,39 +21,29 @@ class OeeSubscriber:
         self._threads = []
         self._total_parts = 0
         self._total_stop_time = 0.0
-        self._IDEAL_PRODUCTION = 100 # TODO
-        self._WORK_TIME = 1000 # TODO
-        self._total_good_parts = 0       
+        self._total_good_parts = 0
+        self._publisher = MqttPublisher(config)
+        self._publisher.connect()
+
+        # MANUAL SETTINGS
+        self._IDEAL_PRODUCTION = 10
+        self._WORK_TIME = 9
 
     def start(self):
-        good_parts_subscriber = self._subscribe_to_good_parts()
-        bad_parts_subscriber = self._subscribe_to_bad_parts()
-        fault_subscriber = self._subscribe_to_faults()
-        self._threads.append(good_parts_subscriber, bad_parts_subscriber, fault_subscriber)
+        self._threads.append(
+            self._create_subscriber_for_topic('good_parts', self._on_message_good))
+        self._threads.append(
+            self._create_subscriber_for_topic('bad_parts', self._on_message_bad))
+        self._threads.append(
+            self._create_subscriber_for_topic('fault', self._on_message_fault))
 
-    def _subscribe_to_faults(self):
-        fault_config = MqttConfig('fault', self._config.broker, self._config.port)
-        fault_subscriber = MqttSubscriber(fault_config)
-        fault_subscriber.connect()
-        fault_subscriber.subscribe(self._on_message_fault)
-        fault_subscriber.start()
-        return fault_subscriber
-
-    def _subscribe_to_bad_parts(self) -> MqttSubscriber:
-        bad_config = MqttConfig('bad_parts', self._config.broker, self._config.port)
-        bad_subscriber = MqttSubscriber(bad_config)
-        bad_subscriber.connect()
-        bad_subscriber.subscribe(self._on_message_bad)
-        bad_subscriber.start()
-        return bad_subscriber
-
-    def _subscribe_to_good_parts(self) -> MqttSubscriber:
-        good_config = MqttConfig('good_parts', self._config.broker, self._config.port)
-        good_subscriber = MqttSubscriber(good_config)
-        good_subscriber.connect()
-        good_subscriber.subscribe(self._on_message_good)
-        good_subscriber.start()
-        return good_subscriber
+    def _create_subscriber_for_topic(self, topic, callback) -> MqttSubscriber:
+        config = MqttConfig(topic, self._config.broker, self._config.port)
+        subscriber = MqttSubscriber(config)
+        subscriber.connect()
+        subscriber.subscribe(callback)
+        subscriber.start()
+        return subscriber
 
     def stop(self):
         for thread in self._threads:
@@ -64,7 +55,7 @@ class OeeSubscriber:
         self._total_parts += 1
         self._update_oee()
  
-    def _on_message_bad(self, client, userdata, msg: MQTTMessage):        
+    def _on_message_bad(self, client, userdata, msg: MQTTMessage):
         self._total_parts += 1
         self._update_oee()
 
@@ -73,17 +64,28 @@ class OeeSubscriber:
         self._update_oee()
 
     def _update_oee(self):
-        quality = self._total_good_parts / self. self._total_parts
-        availability = (self._WORK_TIME - self._total_stop_time) / self._WORK_TIME
-        production = random.uniform(75, 85)
+        quality = (self._total_good_parts / self._total_parts)*100
+        availability = ((self._WORK_TIME - self._total_stop_time) / self._WORK_TIME)*100
+        production = (self._total_parts / self._IDEAL_PRODUCTION)*100
+        oee = production*quality*availability/100**2
 
+        self._publish(quality, availability, production, oee)
+        self._update_bi(quality, availability, production, oee)
+
+    def _publish(self, quality, availability, production, oee):
+        self._publisher.publish(quality, 'quality')
+        self._publisher.publish(availability, 'availability')
+        self._publisher.publish(production, 'production')
+        self._publisher.publish(oee, 'oee')
+
+    def _update_bi(self, quality, availability, production, oee):
         connection = http.client.HTTPSConnection('api.powerbi.com')
 
         headers = {'Content-type': 'application/json'}
 
         body = [
             {
-                "oee" : production*quality*availability/100**2,
+                "oee" : oee,
                 "qualidade" :quality,
                 "disponibilidade" :availability,
                 "producao" :production,
@@ -94,5 +96,4 @@ class OeeSubscriber:
         json_body = json.dumps(body)
 
         connection.request('POST', f'/beta/8a1ef6c3-8324-4103-bf4a-1328c5dc3653/datasets/00efeb83-e802-4be0-a091-85347beddc60/rows?key=Fa2TgypYwwtqLESfXaXe1op7d9sSATOOBPMBoQbar%2BJ2Xhr%2BxGcPG3O4Tuei%2FnZqMrnH9CUgou6p4il8E7PoWA%3D%3D', json_body, headers)
-
         connection.getresponse()
