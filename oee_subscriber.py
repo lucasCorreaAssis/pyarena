@@ -3,9 +3,12 @@ from mqtt import MqttSubscriber, MqttConfig, MqttPublisher
 from paho.mqtt.client import MQTTMessage
 import http.client
 import json
-import random
+import time
 
 class OeeSubscriber:
+    _initial_timestamp: float
+    _bi: str
+    _operation: str
     _config: MqttConfig
     _publisher: MqttPublisher
     _threads: List[MqttSubscriber]
@@ -16,7 +19,10 @@ class OeeSubscriber:
     _WORK_TIME: float
 
 
-    def __init__(self, config: MqttConfig):
+    def __init__(self, config: MqttConfig, operation: str, bi: str):
+        self._initial_timestamp = time.time()
+        self._bi = bi
+        self._operation = operation
         self._config = config
         self._threads = []
         self._total_parts = 0
@@ -24,10 +30,6 @@ class OeeSubscriber:
         self._total_good_parts = 0
         self._publisher = MqttPublisher(config)
         self._publisher.connect()
-
-        # MANUAL SETTINGS
-        self._IDEAL_PRODUCTION = 10
-        self._WORK_TIME = 9
 
     def start(self):
         self._threads.append(
@@ -51,38 +53,59 @@ class OeeSubscriber:
             thread.join()
 
     def _on_message_good(self, client, userdata, msg: MQTTMessage):
+        payload = json.loads(msg.payload)
+        if payload['operation'] != self._operation:
+            return
         self._total_good_parts += 1
         self._total_parts += 1
         self._update_oee()
  
     def _on_message_bad(self, client, userdata, msg: MQTTMessage):
+        payload = json.loads(msg.payload)
+        if payload['operation'] != self._operation:
+            return
         self._total_parts += 1
         self._update_oee()
 
     def _on_message_fault(self, client, userdata, msg: MQTTMessage):
-        self._total_stop_time += float(msg.payload)
+        payload = json.loads(msg.payload)
+        if payload['operation'] != self._operation:
+            return
+        self._total_stop_time += float(payload['value'])
         self._update_oee()
 
     def _update_oee(self):
+        work_time = time.time() - self._initial_timestamp
+        ideal_production = work_time * 0.2
         quality = (self._total_good_parts / self._total_parts)*100
-        availability = ((self._WORK_TIME - self._total_stop_time) / self._WORK_TIME)*100
-        production = (self._total_parts / self._IDEAL_PRODUCTION)*100
+        availability = ((work_time - self._total_stop_time) / work_time)*100
+        production = (self._total_parts / ideal_production)*100
+        if production > 100:
+            production = 100
+        if quality > 100:
+            quality = 100
+        if availability > 100:
+            availability = 100
         oee = production*quality*availability/100**2
-
         self._publish(quality, availability, production, oee)
         self._update_bi(quality, availability, production, oee)
 
     def _publish(self, quality, availability, production, oee):
-        self._publisher.publish(quality, 'quality')
-        self._publisher.publish(availability, 'availability')
-        self._publisher.publish(production, 'production')
-        self._publisher.publish(oee, 'oee')
+        payload = {
+            "operation": self._operation,
+            "value": quality
+        }
+        self._publisher.publish(json.dumps(payload), 'quality')
+        payload['value'] = availability
+        self._publisher.publish(json.dumps(payload), 'availability')
+        payload['value'] = production
+        self._publisher.publish(json.dumps(payload), 'production')
+        payload['value'] = oee
+        self._publisher.publish(json.dumps(payload), 'oee')
 
     def _update_bi(self, quality, availability, production, oee):
         connection = http.client.HTTPSConnection('api.powerbi.com')
-
         headers = {'Content-type': 'application/json'}
-
         body = [
             {
                 "oee" : oee,
@@ -94,6 +117,5 @@ class OeeSubscriber:
             }
         ]
         json_body = json.dumps(body)
-
-        connection.request('POST', f'/beta/8a1ef6c3-8324-4103-bf4a-1328c5dc3653/datasets/00efeb83-e802-4be0-a091-85347beddc60/rows?key=Fa2TgypYwwtqLESfXaXe1op7d9sSATOOBPMBoQbar%2BJ2Xhr%2BxGcPG3O4Tuei%2FnZqMrnH9CUgou6p4il8E7PoWA%3D%3D', json_body, headers)
+        connection.request('POST', self._bi, json_body, headers)
         connection.getresponse()

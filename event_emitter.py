@@ -2,6 +2,7 @@ from abc import ABC, abstractclassmethod
 import time
 import pandas as pd
 from mqtt import MqttPublisher, MqttConfig
+import json
 
 class EventEmitter(ABC):
     @abstractclassmethod
@@ -13,14 +14,16 @@ class EventEmitter(ABC):
         pass
 
 class MQTTEventEmitter(EventEmitter):
+    _operation: str
     _config: MqttConfig
     _dataframe: pd.DataFrame
     _current_index: int
     _publisher: MqttPublisher
     _last_timestamp: float
 
-    def __init__(self, config: MqttConfig) -> None:
+    def __init__(self, config: MqttConfig, operation: str) -> None:
         super().__init__()
+        self._operation = operation
         self._config = config
         self._current_index = 0
         self._last_timestamp = 0
@@ -28,7 +31,7 @@ class MQTTEventEmitter(EventEmitter):
         self._publisher.connect()
 
     def loadHistoricData(self, csv_path: str):
-        self.dataframe = pd.read_csv(csv_path, delimiter=';')
+        self.dataframe = pd.read_csv(csv_path, delimiter=',')
 
     def start(self):
         while len(self.dataframe) > self._current_index + 1:
@@ -42,9 +45,16 @@ class MQTTEventEmitter(EventEmitter):
 
     def _emitNext(self):
         row = self.dataframe.iloc[self._current_index]
+        payload = {
+            "operation": self._operation,
+            "value": 0
+        }
         if row['good_parts'] > 0:
-            self._publisher.publish(str(row['good_parts']), 'good_parts')
+            payload['value'] = str(row['good_parts'])
+            self._publisher.publish(json.dumps(payload), 'good_parts')
         if row['bad_parts'] > 0:
-            self._publisher.publish(str(row['bad_parts']), 'bad_parts')
+            payload['value'] = str(row['bad_parts'])
+            self._publisher.publish(json.dumps(payload), 'bad_parts')
         if row['fault'] > 0:
-            self._publisher.publish(str(row['fault']), 'fault')
+            payload['value'] = str(row['fault'])
+            self._publisher.publish(json.dumps(payload), 'fault')

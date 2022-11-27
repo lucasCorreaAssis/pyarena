@@ -1,3 +1,6 @@
 [submodule "Multicore"]
 	path = Multicore
 	url = https://github.com/AImotion-Autonomous-Vehicles/Multicore.git
+[submodule "promethee"]
+	path = promethee
+	url = https://github.com/lucasCorreaAssis/promethee.git
