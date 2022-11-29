@@ -7,21 +7,17 @@ from paho.mqtt.client import MQTTMessage
 from promethee import Promethee
 import numpy as np
 import threading
-
-@dataclass
-class OperationValue:
-    operation: str
-    value: float
+import time
 
 class DecisionSubscriber:
     _config: MqttConfig
     _threads: List[MqttSubscriber]
     _operations: List[str]
-    _last_quality: List[OperationValue] = []
-    _last_availability: List[OperationValue] = []
-    _last_production: List[OperationValue] = []
-    _last_mtbf: List[OperationValue] = []
-    _last_mttr: List[OperationValue] = []
+    _last_quality: dict[str, float] = {}
+    _last_availability: dict[str, float] = {}
+    _last_production: dict[str, float] = {}
+    _last_mtbf: dict[str, float] = {}
+    _last_mttr: dict[str, float] = {}
     _decision_model: Promethee
     _lock: threading.Lock
 
@@ -32,13 +28,14 @@ class DecisionSubscriber:
         self._decision_model = ProductionOrderPriorization(operations)
         self._lock = threading.Lock()
         for operation in operations:
-            self._last_quality.append(OperationValue(operation, 0.0))
-            self._last_availability.append(OperationValue(operation, 0.0))
-            self._last_production.append(OperationValue(operation, 0.0))
-            self._last_mtbf.append(OperationValue(operation, 0.0))
-            self._last_mttr.append(OperationValue(operation, 0.0))
+            self._last_quality[operation] = 0.0
+            self._last_availability[operation] = 0.0
+            self._last_production[operation] = 0.0
+            self._last_mtbf[operation] = 0.0
+            self._last_mttr[operation] = 0.0
 
     def start(self):
+        self.__running = True
         self._threads.append(self._create_subscriber_for_topic('quality', self._on_quality))
         self._threads.append(self._create_subscriber_for_topic('availability', self._on_availability))
         self._threads.append(self._create_subscriber_for_topic('production', self._on_production))
@@ -62,65 +59,45 @@ class DecisionSubscriber:
         payload = json.loads(msg.payload)
         if not payload['operation'] in self._operations:
             return
-        for i, operation in enumerate(self._operations):
-            if operation == payload['operation']:
-                self._last_quality[i].value = payload['value']
-
-        self._prioritize()
+        self._last_quality[payload['operation']] = payload['value']
 
     def _on_availability(self, client, userdata, msg: MQTTMessage):
         payload = json.loads(msg.payload)
         if not payload['operation'] in self._operations:
             return
-        for i, operation in enumerate(self._operations):
-            if operation == payload['operation']:
-                self._last_availability[i].value = payload['value']
+        self._last_availability[payload['operation']] = payload['value']
         
-        self._prioritize()
-
     def _on_production(self, client, userdata, msg: MQTTMessage):
         payload = json.loads(msg.payload)
         if not payload['operation'] in self._operations:
             return
-        for i, operation in enumerate(self._operations):
-            if operation == payload['operation']:
-                self._last_production[i].value = payload['value']
-
-        self._prioritize()
+        self._last_production[payload['operation']] = payload['value']
 
     def _on_mtbf(self, client, userdata, msg: MQTTMessage):
         payload = json.loads(msg.payload)
         if not payload['operation'] in self._operations:
             return
-        for i, operation in enumerate(self._operations):
-            if operation == payload['operation']:
-                self._last_mtbf[i].value = payload['value']
-
-        self._prioritize()
+        self._last_mtbf[payload['operation']] = payload['value']
 
     def _on_mttr(self, client, userdata, msg: MQTTMessage):
         payload = json.loads(msg.payload)
         if not payload['operation'] in self._operations:
             return
-        for i, operation in enumerate(self._operations):
-            if operation == payload['operation']:
-                self._last_mttr[i].value = payload['value']
+        self._last_mttr[payload['operation']] = payload['value']
 
-        self._prioritize()
-
-    def _prioritize(self):
+    def prioritize(self):
         self._lock.acquire()
         quality = []
         availability = []
         production = []
         mttr = []
         mtbf = []
-        for i,_ in enumerate(self._operations):
-            quality.append(self._last_quality[i].value)
-            availability.append(self._last_availability[i].value)
-            production.append(self._last_production[i].value)
-            mttr.append(self._last_mttr[i].value)
-            mtbf.append(self._last_mtbf[i].value)
+        for operation in self._operations:
+            quality.append(self._last_quality[operation])
+            availability.append(self._last_availability[operation])
+            production.append(self._last_production[operation])
+            mttr.append(self._last_mttr[operation])
+            mtbf.append(self._last_mtbf[operation])
 
         values = np.array([
             quality,
@@ -131,6 +108,7 @@ class DecisionSubscriber:
         ])
 
         output = self._decision_model.prioritize(values)
+        print('New priorization:')
         for i, unicriteria_phi in enumerate(output.unicriteria_phi):
             print(f'{i}- {unicriteria_phi}\n')
         self._lock.release()
