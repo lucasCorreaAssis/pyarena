@@ -4,12 +4,16 @@ import time
 
 config = MqttConfig('test', 'localhost', 1883)
 operations = ['OP1', 'OP2']
-logger = DecisionSubscriber(config, operations)
-logger.start()
+decision = DecisionSubscriber(config, operations)
+decision.start()
+
+# Only for demo purpose
+time.sleep(3)
 
 try:
     while True:
-        pass
+        decision.prioritize()
+        time.sleep(3)
 except KeyboardInterrupt:
     print('Stopping decision!')
-    logger.stop()
+    decision.stop()
