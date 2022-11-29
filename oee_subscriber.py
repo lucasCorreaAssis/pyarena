@@ -15,12 +15,11 @@ class OeeSubscriber:
     _total_parts: int
     _total_stop_time: float
     _total_good_parts: int
-    _IDEAL_PRODUCTION: int
-    _WORK_TIME: float
+    _ideal_production_rate: float
 
-
-    def __init__(self, config: MqttConfig, operation: str, bi: str):
+    def __init__(self, config: MqttConfig, operation: str, bi: str, ideal_production_rate: float):
         self._initial_timestamp = time.time()
+        self._ideal_production_rate = ideal_production_rate
         self._bi = bi
         self._operation = operation
         self._config = config
